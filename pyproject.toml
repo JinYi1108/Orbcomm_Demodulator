@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "orbdemod"
+version = "0.1.0"
+description = "ORBCOMM satellites downlink signal demodulator"
+authors = [{name = "Yanbin Yang", email = "yangyanbin@shao.ac.cn"}]
+readme = "Readme.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "scipy"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
