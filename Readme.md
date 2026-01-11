@@ -32,15 +32,21 @@ pip install -e .
 ---
 ## Examples and Test Data
 
-Several example scripts are provided in the `examples/` directory, along with sample data in `raw_data/`.
+Example scripts are provided in the `examples/` directory. Due to storage limits, large raw datasets are hosted on Zenodo.
 
-#### Data 1: `raw_data/20250415-1940-0.dat`
-- Raw voltage data recorded by the **21CMA** radio telescope
-- Data format: `int16`
+#### 1. Raw Voltage Data (21CMA)
+- **File**: `20250415-1940-0.dat` (approx. 8 GB)
+- **Source**: Raw voltage data recorded by the **21CMA** radio telescope.
+- **Download**: [Available on Zenodo (DOI: 10.5281/zenodo.18213739)](https://zenodo.org/records/18213739)
 
-#### Data 2: `raw_data/1552071892p6.dat`
+#### 2. DDC Processed IQ Data (21CMA)
+- **File**: `raw_data/iq_data_0.dat`
+- **Description**: This is the IQ data generated from the raw 21CMA `.dat` file after Digital Down Conversion (DDC). It is provided for quick testing of the backend stages (STR, Costas, etc.).
 
-- The original data `1552071892p6.mat` from **ORBCOMM-receiver** (https://github.com/fbieberly/ORBCOMM-receiver/tree/master/data) has been downsampled and filtered to generate the baseband IQ file `1552071892p6.dat`
+#### 3. Test Data (from ORBCOMM-receiver)
+- **File**: `raw_data/1552071892p6.dat`
+- **Description**: Derived from the original `1552071892p6.mat` from Frank Bieberly's project. It has been downsampled and filtered to a baseband IQ format.
+
 
 ![alt text](image.png)
 

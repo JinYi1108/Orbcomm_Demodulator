@@ -18,3 +18,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.urls]
+"Homepage" = "https://github.com/JinYi1108/Orbcomm_Demodulator"
+"Data" = "https://zenodo.org/records/18213739"
