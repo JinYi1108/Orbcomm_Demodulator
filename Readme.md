@@ -1,4 +1,4 @@
-# Orbcomm_Demodulator
+# Orbcomm_Demodulator [![DOI](https://zenodo.org/badge/1130552672.svg)](https://doi.org/10.5281/zenodo.18214211)
 
 **Orbcomm_Demodulator** is a Python-based toolkit for demodulating **ORBCOMM** satellite downlink signals.  
 This project was originally developed to process **raw voltage data captured by the 21CMA (21 Centimeter Array)** radio telescope, and aims to provide a **complete, standardized processing pipeline** from raw samples to decoded ORBCOMM data packets.
