@@ -30,3 +30,4 @@ where = ["src"]
 "Homepage" = "https://github.com/JinYi1108/Orbcomm_Demodulator"
 "Data" = "https://zenodo.org/records/18213739"
 "Software-DOI" = "https://doi.org/10.5281/zenodo.18214211"
+"PyPI" = "https://pypi.org/project/orbdemod/"

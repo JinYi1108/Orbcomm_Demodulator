@@ -1,4 +1,6 @@
-# Orbcomm_Demodulator [![DOI](https://zenodo.org/badge/1130552672.svg)](https://doi.org/10.5281/zenodo.18214211)
+# Orbcomm_Demodulator 
+[![PyPI version](https://badge.fury.io/py/orbdemod.svg)](https://badge.fury.io/py/orbdemod)
+[![DOI](https://zenodo.org/badge/1130552672.svg)](https://doi.org/10.5281/zenodo.18214211)
 
 **Orbcomm_Demodulator** is a Python-based toolkit for demodulating **ORBCOMM** satellite downlink signals.  
 This project was originally developed to process **raw voltage data captured by the 21CMA (21 Centimeter Array)** radio telescope, and aims to provide a **complete, standardized processing pipeline** from raw samples to decoded ORBCOMM data packets.
@@ -18,11 +20,20 @@ The demodulation chain includes:
 
 ## Installation
 
+####  From PyPI (Recommended)
+You can install the stable version directly via `pip`:
+```bash
+pip install orbdemod
+```
+
+#### From GitHub
 You can install the package directly from GitHub using:
 
 ```bash
 pip install git+https://github.com/JinYi1108/Orbcomm_Demodulator.git
 ```
+
+#### From Source (For Development)
 For development and debugging, an editable installation is recommended:
 ```bash
 git clone https://github.com/JinYi1108/Orbcomm_Demodulator.git
