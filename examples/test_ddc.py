@@ -5,7 +5,7 @@ import matplotlib.pylab as plt
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from orbdemod import(
-    enable_logging, ddc, cr, rrc, 
+    enable_logging, downconvert_orbcomm_voltage, cr, rrc,
     symbol_timing_recovery, costas, decode,
     find_packet_start, bits_to_packets,validate_packet,
     plot_constellation, plot_eye_diagram
@@ -27,7 +27,13 @@ n = 0
 sample_data = data[int(seconds * fs_in) * n: int(seconds * fs_in) * (n+1)]
 
 
-iq_data, _ = ddc(sample_data, freq_orbcomm, fs_in, fs_mid, fs_out)
+iq_data, _ = downconvert_orbcomm_voltage(
+    sample_data,
+    freq_orbcomm,
+    fs_in,
+    fs_mid,
+    fs_out,
+)
 plot_constellation(iq_data, sample_skip=1, save=True,save_path='./examples/pic/ddc_iq_0/iq_data.png')
 
 # iq_data.astype(np.complex64).tofile("iq_data_0.dat")
@@ -101,7 +107,6 @@ valid_hex_packet = validate_packet(hex_packet,output_file="./examples/orbdemod_p
 print(hex_packet)
 print('-'*50)
 print(valid_hex_packet)
-
 
 
 

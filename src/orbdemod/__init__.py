@@ -1,14 +1,28 @@
 from .logging_config import enable_logging
 
 from .ddc import (
-    digital_down_converter,
+    DecimationStageConfig,
+    FilterResponseReport,
+    design_butterworth_lowpass,
+    design_kaiser_lowpass,
+    filter_and_decimate,
+    filter_and_decimate_stages,
+    format_filter_report,
+    measure_filter_response,
     normalize_signal,
     frequency_mixing,
     decimate_iir,
-    decimate_fir
+    decimate_fir,
+    integer_decimation_factor,
+    validate_filter_response,
 )
 
-ddc = digital_down_converter
+from .orbcomm.orbcomm_ddc import (
+    downconvert_orbcomm_voltage,
+    make_orbcomm_decimation_stages,
+)
+
+ddc = downconvert_orbcomm_voltage
 
 from .cr import (
     v4_freq_offset_estimator,
@@ -69,7 +83,18 @@ __version__ = "0.1.0"
 __all__ = [
     "enable_logging",
 
-    "digital_down_converter",
+    "downconvert_orbcomm_voltage",
+    "DecimationStageConfig",
+    "FilterResponseReport",
+    "design_butterworth_lowpass",
+    "design_kaiser_lowpass",
+    "filter_and_decimate",
+    "filter_and_decimate_stages",
+    "format_filter_report",
+    "make_orbcomm_decimation_stages",
+    "measure_filter_response",
+    "integer_decimation_factor",
+    "validate_filter_response",
     "ddc",
     "normalize_signal",
     "frequency_mixing",

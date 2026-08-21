@@ -4,7 +4,7 @@ import os
 import matplotlib.pyplot as plt
 
 from .logging_config import get_module_logger, enable_logging
-from .ddc import digital_down_converter as ddc
+from .orbcomm.orbcomm_ddc import downconvert_orbcomm_voltage
 from .cr import carrier_error_recovery as cr
 from .rrc import apply_rrc_match_filter as rrc
 from .timing_recovery import symbol_timing_recovery
@@ -53,7 +53,13 @@ def orbdemod(
     if plot and plot_save_dir:
         os.makedirs(plot_save_dir, exist_ok=True)
 
-    iq_data, _ = ddc(raw_data, freq_orbcomm, fs_in, fs_mid, fs_out)
+    iq_data, _ = downconvert_orbcomm_voltage(
+        raw_data,
+        freq_orbcomm,
+        fs_in,
+        fs_mid,
+        fs_out,
+    )
     if plot and plot_save_dir:
         plot_constellation(iq_data, sample_skip=1,title="DDC Constellation", save=True, 
                            save_path=os.path.join(plot_save_dir, 'iq_ddc.png'))
