@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Tuple
-from .logging_config import get_module_logger
+from ..logging_config import get_module_logger
 
 logger = get_module_logger(__name__)
 
@@ -182,7 +182,6 @@ def symbol_timing_recovery(
     logger.info("Symbol Timing Recovery has completed.")
     
     return time_recovery_samples, tau_vect, dtau_vect, timing_error
-
 
 
 

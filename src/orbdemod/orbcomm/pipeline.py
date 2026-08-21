@@ -3,8 +3,8 @@ from typing import Optional, List
 import os
 import matplotlib.pyplot as plt
 
-from .logging_config import get_module_logger, enable_logging
-from .orbcomm.orbcomm_ddc import downconvert_orbcomm_voltage
+from ..logging_config import get_module_logger, enable_logging
+from .orbcomm_ddc import downconvert_orbcomm_voltage
 from .cr import carrier_error_recovery as cr
 from .rrc import apply_rrc_match_filter as rrc
 from .timing_recovery import symbol_timing_recovery

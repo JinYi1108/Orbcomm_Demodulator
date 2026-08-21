@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Tuple
-from .logging_config import get_module_logger
+from ..logging_config import get_module_logger
 
 logger = get_module_logger(__name__)
 
@@ -118,4 +118,3 @@ def plot_eye_diagram(
     logger.info("Eye Diagram generated with %d segments (segment_length=%d).", num_plotted, segment_length)
 
     return fig, ax
-

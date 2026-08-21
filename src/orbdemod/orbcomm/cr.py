@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.signal as sp_signal
-from .ddc import frequency_mixing
-from .logging_config import get_module_logger
+from ..ddc import frequency_mixing
+from ..logging_config import get_module_logger
 
 logger = get_module_logger(__name__)
 
