@@ -153,5 +153,21 @@ python examples/analyze_fm_psd.py \
   --label direct_100p1
 ```
 
+Alternatively, select a window by file fraction (the two window modes are
+mutually exclusive):
+
+```bash
+python examples/analyze_fm_psd.py \
+  --input /path/to/20250415-1940-0.dat \
+  --rf-frequency 100.1e6 \
+  --start-fraction 0.25 \
+  --stop-fraction 0.30 \
+  --output-dir results/direct_100p1_fraction
+```
+
+The default high-rate processing block is 10,000,000 input samples and remains
+configurable with `--chunk-samples`. Real-data benchmarks at 2M, 5M, 10M, and
+20M samples should be used before fixing a long-term default.
+
 The output directory contains `fm_psd.png`, `fm_arrays.npz`, `summary.json`,
 and `run_config.json`.

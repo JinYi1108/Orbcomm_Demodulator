@@ -11,8 +11,10 @@ from scipy import signal
 from ..ddc import (
     DecimationStageConfig,
     design_butterworth_lowpass,
-    design_kaiser_lowpass,
+    filter_and_decimate,
+    frequency_mixing,
     integer_decimation_factor,
+    validate_decimation_stages,
 )
 
 
@@ -27,7 +29,7 @@ class FMDDCConfig:
     stopband_hz: float = 120e3
     stopband_attenuation_db: float = 60.0
     first_stage_passband_ripple_db: float = 0.25
-    chunk_samples: int = 2_000_000
+    chunk_samples: int = 10_000_000
 
     def validate(self) -> None:
         if min(self.fs_in, self.fs_mid, self.fs_out) <= 0:
@@ -44,15 +46,8 @@ class FMDDCConfig:
             raise ValueError("first_stage_passband_ripple_db must be positive.")
         if self.chunk_samples <= 0:
             raise ValueError("chunk_samples must be positive.")
-        _integer_decimation(self.fs_in, self.fs_mid, "fs_in/fs_mid")
-        _integer_decimation(self.fs_mid, self.fs_out, "fs_mid/fs_out")
-
-
-def _integer_decimation(fs_from: float, fs_to: float, name: str) -> int:
-    try:
-        return integer_decimation_factor(fs_from, fs_to)
-    except ValueError as error:
-        raise ValueError(f"Invalid {name}: {error}") from error
+        integer_decimation_factor(self.fs_in, self.fs_mid)
+        integer_decimation_factor(self.fs_mid, self.fs_out)
 
 
 def _adc_scale(dtype: np.dtype) -> float:
@@ -62,61 +57,42 @@ def _adc_scale(dtype: np.dtype) -> float:
     return 1.0
 
 
-def _frequency_mix(
-    data: np.ndarray,
-    frequency_hz: float,
-    fs: float,
-    initial_phase: float,
-) -> Tuple[np.ndarray, float]:
-    """Shift one block to baseband while preserving NCO phase continuity."""
+def make_fm_decimation_stages(
+    config: FMDDCConfig = FMDDCConfig(),
+) -> Tuple[DecimationStageConfig, DecimationStageConfig]:
+    """Build the FM-specific two-stage anti-alias and decimation plan."""
 
-    phase_step = 2.0 * np.pi * float(frequency_hz) / float(fs)
-    sample_index = np.arange(len(data), dtype=np.float64)
-    phase = initial_phase + phase_step * sample_index
-    mixed = np.asarray(data) * np.exp(-1j * phase)
-    next_phase = np.remainder(
-        initial_phase + phase_step * len(data) + np.pi,
-        2.0 * np.pi,
-    ) - np.pi
-    return mixed, float(next_phase)
-
-
-def _design_first_stage(config: FMDDCConfig) -> np.ndarray:
-    """Design a Butterworth anti-alias filter for fs_in -> fs_mid."""
-
-    stage = DecimationStageConfig(
-        fs_in=config.fs_in,
-        fs_out=config.fs_mid,
-        passband_hz=config.passband_hz,
-        stopband_hz=config.fs_mid / 2.0,
-        passband_ripple_db=config.first_stage_passband_ripple_db,
-        stopband_attenuation_db=config.stopband_attenuation_db,
-        filter_type="butterworth",
+    config.validate()
+    stages = (
+        DecimationStageConfig(
+            fs_in=config.fs_in,
+            fs_out=config.fs_mid,
+            passband_hz=config.passband_hz,
+            stopband_hz=config.fs_mid / 2.0,
+            passband_ripple_db=config.first_stage_passband_ripple_db,
+            stopband_attenuation_db=config.stopband_attenuation_db,
+            filter_type="butterworth",
+        ),
+        DecimationStageConfig(
+            fs_in=config.fs_mid,
+            fs_out=config.fs_out,
+            passband_hz=config.passband_hz,
+            stopband_hz=config.stopband_hz,
+            stopband_attenuation_db=config.stopband_attenuation_db,
+            filter_type="kaiser_fir",
+        ),
     )
-    return design_butterworth_lowpass(stage)
+    validate_decimation_stages(stages)
+    return stages
 
 
-def _design_second_stage(config: FMDDCConfig) -> np.ndarray:
-    """Design a Kaiser FIR with an explicit 90--120 kHz transition band."""
-
-    stage = DecimationStageConfig(
-        fs_in=config.fs_mid,
-        fs_out=config.fs_out,
-        passband_hz=config.passband_hz,
-        stopband_hz=config.stopband_hz,
-        stopband_attenuation_db=config.stopband_attenuation_db,
-        filter_type="kaiser_fir",
-    )
-    return design_kaiser_lowpass(stage)
-
-
-def downconvert_real_voltage(
+def downconvert_fm_voltage(
     raw_data: np.ndarray,
     rf_frequency_hz: float,
     config: FMDDCConfig = FMDDCConfig(),
     initial_phase: float = 0.0,
 ) -> Tuple[np.ndarray, float]:
-    """Extract one FM channel as complex IQ at ``config.fs_out``.
+    """Convert raw voltage samples to one FM channel as complex IQ.
 
     The high-rate input is mixed and IIR-filtered in bounded chunks. Filter
     state, NCO phase, and the decimation grid remain continuous between
@@ -124,7 +100,7 @@ def downconvert_real_voltage(
     passband before reducing the rate to 240 kS/s.
     """
 
-    config.validate()
+    first_stage, second_stage = make_fm_decimation_stages(config)
     raw_data = np.asanyarray(raw_data)
     if raw_data.ndim != 1 or len(raw_data) == 0:
         raise ValueError("raw_data must be a non-empty one-dimensional array.")
@@ -133,9 +109,8 @@ def downconvert_real_voltage(
     if not 0 < rf_frequency_hz < config.fs_in / 2.0:
         raise ValueError("rf_frequency_hz must lie between 0 and fs_in / 2.")
 
-    decimation_1 = _integer_decimation(config.fs_in, config.fs_mid, "fs_in/fs_mid")
-    decimation_2 = _integer_decimation(config.fs_mid, config.fs_out, "fs_mid/fs_out")
-    first_stage_sos = _design_first_stage(config)
+    decimation_1 = first_stage.decimation_factor
+    first_stage_sos = design_butterworth_lowpass(first_stage)
     first_stage_state = np.zeros(
         (first_stage_sos.shape[0], 2),
         dtype=np.complex128,
@@ -149,7 +124,7 @@ def downconvert_real_voltage(
     for start in range(0, len(raw_data), config.chunk_samples):
         stop = min(start + config.chunk_samples, len(raw_data))
         voltage = np.asarray(raw_data[start:stop], dtype=np.float32) / scale
-        mixed, phase = _frequency_mix(
+        mixed, phase = frequency_mixing(
             voltage,
             rf_frequency_hz,
             config.fs_in,
@@ -166,11 +141,5 @@ def downconvert_real_voltage(
         input_count += len(voltage)
 
     stage_1 = np.concatenate(stage_1_blocks)
-    second_stage_fir = _design_second_stage(config)
-    baseband = signal.resample_poly(
-        stage_1,
-        up=1,
-        down=decimation_2,
-        window=second_stage_fir,
-    )
+    baseband = filter_and_decimate(stage_1, second_stage)
     return np.asarray(baseband, dtype=np.complex64), phase

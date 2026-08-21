@@ -9,15 +9,16 @@ import unittest
 import numpy as np
 from scipy import signal
 
+from orbdemod.ddc import design_butterworth_lowpass, design_kaiser_lowpass
 from orbdemod.fm import (
     FMDDCConfig,
     FMPSDConfig,
     analyze_fm_psd_file,
     compute_mpx_psd,
-    downconvert_real_voltage,
+    downconvert_fm_voltage,
+    make_fm_decimation_stages,
     quadrature_discriminator,
 )
-from orbdemod.fm.ddc import _design_first_stage, _design_second_stage
 
 
 def synthetic_mpx(time: np.ndarray) -> np.ndarray:
@@ -33,15 +34,39 @@ def synthetic_mpx(time: np.ndarray) -> np.ndarray:
 
 
 class FMPSDTest(unittest.TestCase):
+    def test_window_selection_modes_are_mutually_exclusive(self) -> None:
+        with self.assertRaisesRegex(ValueError, "exactly one window mode"):
+            FMPSDConfig(rf_frequency_hz=98.3e6).validate()
+        with self.assertRaisesRegex(ValueError, "exactly one window mode"):
+            FMPSDConfig(
+                rf_frequency_hz=98.3e6,
+                start_seconds=0.0,
+                duration_seconds=1.0,
+                start_fraction=0.0,
+                stop_fraction=0.5,
+            ).validate()
+
+        fraction_config = FMPSDConfig(
+            rf_frequency_hz=98.3e6,
+            start_fraction=0.25,
+            stop_fraction=0.50,
+        )
+        mode, start, duration = fraction_config.resolve_window(8.0)
+        self.assertEqual(mode, "fraction")
+        self.assertEqual(start, 2.0)
+        self.assertEqual(duration, 2.0)
+
     def test_default_filter_response_meets_specification(self) -> None:
         config = FMDDCConfig()
-        first_sos = _design_first_stage(config)
+        self.assertEqual(config.chunk_samples, 10_000_000)
+        first_stage, second_stage = make_fm_decimation_stages(config)
+        first_sos = design_butterworth_lowpass(first_stage)
         first_frequencies, first_response = signal.sosfreqz(
             first_sos,
             worN=131_072,
             fs=config.fs_in,
         )
-        second_fir = _design_second_stage(config)
+        second_fir = design_kaiser_lowpass(second_stage)
         second_frequencies, second_response = signal.freqz(
             second_fir,
             worN=131_072,
@@ -75,12 +100,12 @@ class FMPSDTest(unittest.TestCase):
             passband_hz=45_000.0,
             stopband_hz=60_000.0,
         )
-        one_block, _ = downconvert_real_voltage(
+        one_block, _ = downconvert_fm_voltage(
             voltage,
             rf_frequency_hz,
             FMDDCConfig(chunk_samples=len(voltage), **common),
         )
-        many_blocks, _ = downconvert_real_voltage(
+        many_blocks, _ = downconvert_fm_voltage(
             voltage,
             rf_frequency_hz,
             FMDDCConfig(chunk_samples=12_345, **common),
@@ -125,7 +150,7 @@ class FMPSDTest(unittest.TestCase):
             stopband_hz=120_000.0,
             chunk_samples=100_000,
         )
-        iq, _ = downconvert_real_voltage(voltage, rf_frequency_hz, ddc)
+        iq, _ = downconvert_fm_voltage(voltage, rf_frequency_hz, ddc)
         self.assertGreater(len(iq), 1_000)
 
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -149,6 +174,28 @@ class FMPSDTest(unittest.TestCase):
             self.assertTrue((output_dir / "fm_arrays.npz").is_file())
             self.assertTrue((output_dir / "summary.json").is_file())
             self.assertTrue((output_dir / "run_config.json").is_file())
+
+            fraction_output_dir = root / "fraction_results"
+            fraction_config = FMPSDConfig(
+                rf_frequency_hz=rf_frequency_hz,
+                start_fraction=0.1875,
+                stop_fraction=0.8125,
+                padding_seconds=0.01,
+                label="synthetic_fm_fraction",
+                ddc=ddc,
+            )
+            fraction_summary = analyze_fm_psd_file(
+                input_path,
+                fraction_output_dir,
+                fraction_config,
+            )
+            self.assertEqual(fraction_summary["selection_mode"], "fraction")
+            self.assertAlmostEqual(fraction_summary["start_seconds"], 0.03)
+            self.assertAlmostEqual(fraction_summary["duration_seconds"], 0.10)
+            self.assertLess(
+                abs(float(fraction_summary["pilot_peak_hz"]) - 19_000.0),
+                60.0,
+            )
 
 
 if __name__ == "__main__":

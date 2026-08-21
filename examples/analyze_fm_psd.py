@@ -17,12 +17,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         help="Target FM station frequency in Hz, for example 100.1e6.",
     )
-    parser.add_argument("--start", type=float, default=0.0, help="Start time in seconds.")
+    parser.add_argument("--start", type=float, help="Start time in seconds.")
     parser.add_argument(
         "--duration",
         type=float,
-        default=0.5,
         help="Analysis-window duration in seconds.",
+    )
+    parser.add_argument(
+        "--start-fraction",
+        type=float,
+        help="Start position as a fraction of the file, from 0 to 1.",
+    )
+    parser.add_argument(
+        "--stop-fraction",
+        type=float,
+        help="Stop position as a fraction of the file, from 0 to 1.",
     )
     parser.add_argument("--output-dir", required=True, help="Output directory.")
     parser.add_argument("--label", default="direct_fm_test")
@@ -34,12 +43,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stopband", type=float, default=120e3)
     parser.add_argument("--stopband-attenuation", type=float, default=60.0)
     parser.add_argument("--padding", type=float, default=0.020)
-    parser.add_argument("--chunk-samples", type=int, default=2_000_000)
+    parser.add_argument("--chunk-samples", type=int, default=10_000_000)
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    if all(
+        value is None
+        for value in (
+            args.start,
+            args.duration,
+            args.start_fraction,
+            args.stop_fraction,
+        )
+    ):
+        args.start = 0.0
+        args.duration = 0.5
     ddc = FMDDCConfig(
         fs_in=args.sample_rate,
         fs_mid=args.intermediate_rate,
@@ -53,6 +73,8 @@ def main() -> None:
         rf_frequency_hz=args.rf_frequency,
         start_seconds=args.start,
         duration_seconds=args.duration,
+        start_fraction=args.start_fraction,
+        stop_fraction=args.stop_fraction,
         dtype=args.dtype,
         padding_seconds=args.padding,
         label=args.label,

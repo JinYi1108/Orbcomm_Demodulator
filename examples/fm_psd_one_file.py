@@ -26,9 +26,16 @@ INPUT_FILE = Path("/path/to/20250415-1940-0.dat")
 # 需要下变频到零频的目标 FM 电台频率，例如 98.3 MHz。
 RF_FREQUENCY_HZ = 98.3e6
 
-# 从文件第几秒开始，以及处理多长时间。第一次建议只处理 0.2 秒。
+# 窗口选择方式："seconds" 按秒，"fraction" 按文件总长度比例。
+WINDOW_MODE = "seconds"
+
+# 按秒模式：从文件第几秒开始，以及处理多长时间。
 START_SECONDS = 0.0
 DURATION_SECONDS = 0.2
+
+# 按比例模式：例如 0.25--0.30 表示读取文件的 25% 到 30%。
+START_FRACTION = 0.25
+STOP_FRACTION = 0.30
 
 # 输出文件夹。
 OUTPUT_DIR = Path("./results/fm_98p3_simple")
@@ -47,7 +54,7 @@ STOPBAND_ATTENUATION_DB = 60.0
 FIRST_STAGE_PASSBAND_RIPPLE_DB = 0.25
 
 # 分块大小和滤波边缘留白。
-CHUNK_SAMPLES = 2_000_000
+CHUNK_SAMPLES = 10_000_000
 PADDING_SECONDS = 0.020
 
 
@@ -65,8 +72,6 @@ if not INPUT_FILE.is_file():
     )
 if not 0 < RF_FREQUENCY_HZ < FS_IN / 2.0:
     raise ValueError("RF_FREQUENCY_HZ 必须位于 0 和 FS_IN/2 之间。")
-if START_SECONDS < 0 or DURATION_SECONDS <= 0:
-    raise ValueError("START_SECONDS 不能为负，DURATION_SECONDS 必须大于0。")
 if not 0 < PASSBAND_HZ < STOPBAND_HZ <= FS_OUT / 2.0:
     raise ValueError("需要满足 0 < PASSBAND_HZ < STOPBAND_HZ <= FS_OUT/2。")
 
@@ -80,7 +85,22 @@ if not np.isclose(FS_MID / FS_OUT, DECIMATION_2, rtol=0.0, atol=1e-9):
 dtype = np.dtype(INPUT_DTYPE)
 raw = np.memmap(INPUT_FILE, dtype=dtype, mode="r")
 file_duration_seconds = len(raw) / FS_IN
-requested_stop_seconds = START_SECONDS + DURATION_SECONDS
+if WINDOW_MODE == "seconds":
+    if START_SECONDS < 0 or DURATION_SECONDS <= 0:
+        raise ValueError("START_SECONDS 不能为负，DURATION_SECONDS 必须大于0。")
+    requested_start_seconds = START_SECONDS
+    requested_duration_seconds = DURATION_SECONDS
+elif WINDOW_MODE == "fraction":
+    if not 0.0 <= START_FRACTION < STOP_FRACTION <= 1.0:
+        raise ValueError("需要满足 0 <= START_FRACTION < STOP_FRACTION <= 1。")
+    requested_start_seconds = START_FRACTION * file_duration_seconds
+    requested_duration_seconds = (
+        STOP_FRACTION - START_FRACTION
+    ) * file_duration_seconds
+else:
+    raise ValueError('WINDOW_MODE 必须是 "seconds" 或 "fraction"。')
+
+requested_stop_seconds = requested_start_seconds + requested_duration_seconds
 if requested_stop_seconds > file_duration_seconds:
     raise ValueError(
         "请求处理到 {:.6f} 秒，但文件总时长只有 {:.6f} 秒。".format(
@@ -89,7 +109,7 @@ if requested_stop_seconds > file_duration_seconds:
         )
     )
 
-padded_start_seconds = max(0.0, START_SECONDS - PADDING_SECONDS)
+padded_start_seconds = max(0.0, requested_start_seconds - PADDING_SECONDS)
 padded_stop_seconds = min(
     file_duration_seconds,
     requested_stop_seconds + PADDING_SECONDS,
@@ -101,7 +121,12 @@ raw_window = raw[start_sample:stop_sample]
 print("输入文件：", INPUT_FILE)
 print("文件总时长：{:.6f} s".format(file_duration_seconds))
 print("目标频率：{:.6f} MHz".format(RF_FREQUENCY_HZ / 1e6))
-print("处理时间：{:.6f}--{:.6f} s".format(START_SECONDS, requested_stop_seconds))
+print(
+    "处理时间：{:.6f}--{:.6f} s".format(
+        requested_start_seconds,
+        requested_stop_seconds,
+    )
+)
 print("原始采样点数（含padding）：", len(raw_window))
 
 
@@ -197,8 +222,8 @@ iq_padded = signal.resample_poly(
 iq_padded = np.asarray(iq_padded, dtype=np.complex64)
 
 # 去掉为了滤波边缘而多读取的padding，只保留用户指定的时间段。
-trim_start = int(round((START_SECONDS - padded_start_seconds) * FS_OUT))
-requested_output_samples = int(round(DURATION_SECONDS * FS_OUT))
+trim_start = int(round((requested_start_seconds - padded_start_seconds) * FS_OUT))
+requested_output_samples = int(round(requested_duration_seconds * FS_OUT))
 trim_stop = min(trim_start + requested_output_samples, len(iq_padded))
 iq = iq_padded[trim_start:trim_stop]
 if len(iq) < 256:
@@ -358,8 +383,11 @@ summary = {
     "input_file": str(INPUT_FILE),
     "label": LABEL,
     "rf_frequency_hz": RF_FREQUENCY_HZ,
-    "start_seconds": START_SECONDS,
-    "duration_seconds": DURATION_SECONDS,
+    "selection_mode": WINDOW_MODE,
+    "start_seconds": requested_start_seconds,
+    "duration_seconds": requested_duration_seconds,
+    "start_fraction": START_FRACTION if WINDOW_MODE == "fraction" else None,
+    "stop_fraction": STOP_FRACTION if WINDOW_MODE == "fraction" else None,
     "input_file_duration_seconds": file_duration_seconds,
     "input_dtype": dtype.str,
     "iq_sample_rate_hz": FS_OUT,
