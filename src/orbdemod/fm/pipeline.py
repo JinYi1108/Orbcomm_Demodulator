@@ -15,7 +15,32 @@ from .demod import compute_mpx_psd, pilot_peak_summary, quadrature_discriminator
 
 @dataclass(frozen=True)
 class FMPSDConfig:
-    """Configuration for one offline FM spectrum window."""
+    """Configuration for one offline FM analysis window.
+
+    Attributes:
+        rf_frequency_hz: Target station frequency in Hz, for example
+            ``98.3e6``.
+        start_seconds: Analysis start relative to the beginning of the raw
+            file. Use together with ``duration_seconds``.
+        duration_seconds: Analysis duration when selecting by seconds.
+        start_fraction: Start position as a fraction of total file duration.
+            Use together with ``stop_fraction`` instead of the seconds mode.
+        stop_fraction: Stop position as a fraction of total file duration.
+        dtype: NumPy dtype used to interpret the raw file. ``"<i2"`` means
+            little-endian signed 16-bit integers.
+        padding_seconds: Extra data read before and after the requested window
+            to reduce filter-edge effects; it is removed from saved IQ.
+        waveform_start_seconds: Start of the third plot relative to the chosen
+            analysis window. ``None`` centers the displayed segment.
+        waveform_duration_seconds: Duration displayed by the third plot. This
+            does not change the data used for either PSD.
+        label: Human-readable label placed in plot titles and ``summary.json``.
+        ddc: FM DDC sample-rate, filter, and chunk settings.
+
+    Notes:
+        Select exactly one file-window mode: either ``start_seconds`` with
+        ``duration_seconds``, or ``start_fraction`` with ``stop_fraction``.
+    """
 
     rf_frequency_hz: float
     start_seconds: float | None = None
@@ -24,6 +49,8 @@ class FMPSDConfig:
     stop_fraction: float | None = None
     dtype: str = "<i2"
     padding_seconds: float = 0.020
+    waveform_start_seconds: float | None = None
+    waveform_duration_seconds: float = 0.050
     label: str = "fm_psd"
     ddc: FMDDCConfig = field(default_factory=FMDDCConfig)
 
@@ -60,12 +87,26 @@ class FMPSDConfig:
                 )
         if self.padding_seconds < 0:
             raise ValueError("padding_seconds must be non-negative.")
+        if (
+            self.waveform_start_seconds is not None
+            and self.waveform_start_seconds < 0
+        ):
+            raise ValueError("waveform_start_seconds must be non-negative.")
+        if self.waveform_duration_seconds <= 0:
+            raise ValueError("waveform_duration_seconds must be positive.")
         np.dtype(self.dtype)
 
     def resolve_window(self, file_duration_seconds: float) -> Tuple[str, float, float]:
-        """Return selection mode, start time, and duration in seconds."""
+        """Resolve either selection mode to actual seconds in the raw file.
 
-        self.validate()
+        Args:
+            file_duration_seconds: Total duration of the input file.
+
+        Returns:
+            ``(selection_mode, start_seconds, duration_seconds)`` where
+            ``selection_mode`` is ``"seconds"`` or ``"fraction"``.
+        """
+
         if file_duration_seconds <= 0:
             raise ValueError("The input file contains no samples.")
         if self.start_seconds is not None:
@@ -85,6 +126,46 @@ class FMPSDConfig:
             )
         return selection_mode, requested_start, requested_duration
 
+    def resolve_waveform_window(
+        self,
+        available_duration_seconds: float,
+    ) -> Tuple[float, float]:
+        """Resolve the third plot's start and duration within the analysis window.
+
+        Args:
+            available_duration_seconds: Duration covered by the available MPX
+                samples after discrimination.
+
+        Returns:
+            ``(start_seconds, duration_seconds)`` relative to the beginning of
+            the selected analysis window. When the configured start is
+            ``None``, the requested display duration is centered.
+        """
+
+        if available_duration_seconds <= 0:
+            raise ValueError("No FM composite samples are available for plotting.")
+
+        display_duration = min(
+            self.waveform_duration_seconds,
+            available_duration_seconds,
+        )
+        if self.waveform_start_seconds is None:
+            display_start = 0.5 * (
+                available_duration_seconds - display_duration
+            )
+        else:
+            display_start = self.waveform_start_seconds
+            if display_start >= available_duration_seconds:
+                raise ValueError(
+                    "waveform_start_seconds must lie inside the selected "
+                    "analysis window."
+                )
+            display_duration = min(
+                display_duration,
+                available_duration_seconds - display_start,
+            )
+        return display_start, display_duration
+
 
 def _json_value(value: object) -> object:
     if isinstance(value, (np.floating, np.integer)):
@@ -94,19 +175,113 @@ def _json_value(value: object) -> object:
     return value
 
 
+def _compact_path_number(value: float) -> str:
+    """Format a path number with up to six decimals and no trailing zeros."""
+
+    text = f"{float(value):.6f}".rstrip("0").rstrip(".")
+    return "0" if text == "-0" else text
+
+
+def _prepare_output_dir(
+    input_path: Path,
+    output_dir: str | Path | None,
+    output_root: str | Path,
+    rf_frequency_hz: float,
+    start_seconds: float,
+    duration_seconds: float,
+    overwrite: bool,
+) -> Path:
+    """Create an explicit or automatically named, non-destructive output path.
+
+    Automatic paths use::
+
+        output_root / input_stem / frequencyMHz / start_duration
+
+    For example, 98.33 MHz from 30 s for 3 s becomes
+    ``results/file/98.33MHz/30_3``. Existing paths receive ``_run02``,
+    ``_run03``, and so on unless ``overwrite`` is true. An explicit
+    ``output_dir`` replaces the automatic base path but follows the same
+    collision rule.
+    """
+
+    if output_dir is None:
+        frequency_name = (
+            f"{_compact_path_number(rf_frequency_hz / 1e6)}MHz"
+        )
+        window_name = "{}_{}".format(
+            _compact_path_number(start_seconds),
+            _compact_path_number(duration_seconds),
+        )
+        base_dir = (
+            Path(output_root).expanduser()
+            / input_path.stem
+            / frequency_name
+            / window_name
+        ).resolve()
+    else:
+        base_dir = Path(output_dir).expanduser().resolve()
+
+    selected_dir = base_dir
+    if selected_dir.exists() and not overwrite:
+        run_number = 2
+        while True:
+            candidate = base_dir.with_name(
+                f"{base_dir.name}_run{run_number:02d}"
+            )
+            if not candidate.exists():
+                selected_dir = candidate
+                break
+            run_number += 1
+
+    selected_dir.mkdir(parents=True, exist_ok=overwrite)
+    return selected_dir
+
+
 def analyze_fm_psd_file(
     input_path: str | Path,
-    output_dir: str | Path,
+    output_dir: str | Path | None,
     config: FMPSDConfig,
+    *,
+    output_root: str | Path = "results",
+    overwrite: bool = False,
 ) -> Dict[str, object]:
-    """Analyze one time-frequency window without making an FM classification."""
+    """Run the complete offline raw-voltage-to-FM-diagnostics pipeline.
+
+    Args:
+        input_path: Raw, real-valued voltage file interpreted with
+            ``config.dtype``.
+        output_dir: Explicit output-directory base. Pass ``None`` to build the
+            directory automatically from input filename, frequency, resolved
+            start time, and duration.
+        config: RF frequency, file-window, waveform-display, and DDC settings.
+        output_root: Root used only when ``output_dir`` is ``None``. The default
+            is ``results`` relative to the current working directory.
+        overwrite: If false, an existing base directory becomes ``_run02``,
+            then ``_run03``, etc. If true, fixed result files in the base
+            directory are replaced.
+
+    Returns:
+        JSON-compatible summary dictionary, including the actual output path,
+        resolved file window, carrier offset, and 19 kHz pilot-candidate
+        metrics.
+
+    Saves:
+        ``summary.json`` with resolved values and metrics; ``run_config.json``
+        with requested configuration; ``fm_arrays.npz`` with the complete
+        selected IQ, MPX, and MPX PSD arrays; and ``fm_psd.png`` with three
+        diagnostic panels.
+
+    Notes:
+        The saved IQ and MPX cover the complete selected analysis window. Only
+        the third panel is shortened by the waveform display parameters. This
+        pipeline does not perform stereo audio decoding or automatic FM
+        classification.
+    """
 
     config.validate()
     input_path = Path(input_path).expanduser().resolve()
-    output_dir = Path(output_dir).expanduser().resolve()
     if not input_path.is_file():
         raise FileNotFoundError(input_path)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     dtype = np.dtype(config.dtype)
     raw = np.memmap(input_path, dtype=dtype, mode="r")
@@ -150,9 +325,22 @@ def analyze_fm_psd_file(
     mpx_hz, carrier_offset_hz = quadrature_discriminator(iq, config.ddc.fs_out)
     frequencies, psd = compute_mpx_psd(mpx_hz, config.ddc.fs_out)
     pilot_peak_hz, pilot_local_contrast_db = pilot_peak_summary(frequencies, psd)
+    waveform_start, waveform_duration = config.resolve_waveform_window(
+        len(mpx_hz) / config.ddc.fs_out
+    )
+    output_dir = _prepare_output_dir(
+        input_path=input_path,
+        output_dir=output_dir,
+        output_root=output_root,
+        rf_frequency_hz=config.rf_frequency_hz,
+        start_seconds=requested_start,
+        duration_seconds=requested_duration,
+        overwrite=overwrite,
+    )
 
     summary: Dict[str, object] = {
         "input_path": str(input_path),
+        "output_dir": str(output_dir),
         "label": config.label,
         "rf_frequency_hz": config.rf_frequency_hz,
         "selection_mode": selection_mode,
@@ -163,10 +351,11 @@ def analyze_fm_psd_file(
         "input_file_duration_seconds": file_duration_seconds,
         "input_dtype": dtype.str,
         "iq_sample_rate_hz": config.ddc.fs_out,
+        "waveform_start_seconds": waveform_start,
+        "waveform_duration_seconds": waveform_duration,
         "carrier_offset_hz": carrier_offset_hz,
         "pilot_peak_hz": pilot_peak_hz,
         "pilot_local_contrast_db": pilot_local_contrast_db,
-        "classification": "not_performed",
     }
 
     json_summary = {key: _json_value(value) for key, value in summary.items()}
@@ -194,5 +383,7 @@ def analyze_fm_psd_file(
         mpx_psd=psd,
         rf_frequency_hz=config.rf_frequency_hz,
         label=config.label,
+        waveform_start_seconds=waveform_start,
+        waveform_duration_seconds=waveform_duration,
     )
     return json_summary

@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 
 [project]
-name = "orbdemod"
+name = "LFdemod"
 version = "0.1.0"
-description = "ORBCOMM satellites downlink signal demodulator"
+description = "Low-frequency radio demodulation and diagnostic processing from raw voltage data"
 authors = [{name = "Yanbin Yang", email = "yangyanbin@shao.ac.cn"}]
 readme = "Readme.md"
 requires-python = ">=3.8"
@@ -23,6 +23,9 @@ dependencies = [
     "scipy"
 ]
 
+[project.scripts]
+lfdemod = "lfdemod.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -30,4 +33,4 @@ where = ["src"]
 "Homepage" = "https://github.com/JinYi1108/Orbcomm_Demodulator"
 "Data" = "https://zenodo.org/records/18213739"
 "Software-DOI" = "https://doi.org/10.5281/zenodo.18214211"
-"PyPI" = "https://pypi.org/project/orbdemod/"
+"Legacy-PyPI" = "https://pypi.org/project/orbdemod/"

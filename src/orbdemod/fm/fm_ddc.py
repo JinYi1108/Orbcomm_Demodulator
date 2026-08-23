@@ -20,7 +20,25 @@ from ..ddc import (
 
 @dataclass(frozen=True)
 class FMDDCConfig:
-    """Parameters for converting 21CMA voltage data to complex FM-channel IQ."""
+    """Parameters for converting 21CMA voltage data to complex FM-channel IQ.
+
+    Attributes:
+        fs_in: Raw real-voltage sample rate in samples/s. The 21CMA default is
+            480 MS/s.
+        fs_mid: Sample rate after the first decimation stage. The default is
+            2.4 MS/s.
+        fs_out: Final complex-IQ sample rate. The default 240 kS/s supports an
+            FM channel extending to +/-120 kHz.
+        passband_hz: One-sided channel passband retained around the tuned
+            station. The default is 90 kHz.
+        stopband_hz: One-sided frequency at which the final filter must already
+            meet its stopband requirement. The default is 120 kHz.
+        stopband_attenuation_db: Required alias rejection in the stopband.
+        first_stage_passband_ripple_db: Allowed passband ripple for the first
+            Butterworth stage.
+        chunk_samples: Number of high-rate input samples processed per block.
+            It changes memory use and speed, not the selected file duration.
+    """
 
     fs_in: float = 480e6
     fs_mid: float = 2.4e6
@@ -50,17 +68,23 @@ class FMDDCConfig:
         integer_decimation_factor(self.fs_mid, self.fs_out)
 
 
-def _adc_scale(dtype: np.dtype) -> float:
-    if np.issubdtype(dtype, np.integer):
-        info = np.iinfo(dtype)
-        return float(max(abs(info.min), abs(info.max)))
-    return 1.0
-
-
 def make_fm_decimation_stages(
     config: FMDDCConfig = FMDDCConfig(),
 ) -> Tuple[DecimationStageConfig, DecimationStageConfig]:
-    """Build the FM-specific two-stage anti-alias and decimation plan."""
+    """Build the FM-specific two-stage anti-alias and decimation plan.
+
+    Args:
+        config: FM input, intermediate, and output sample-rate/filter settings.
+
+    Returns:
+        A two-element tuple. Stage 1 is a Butterworth IIR from ``fs_in`` to
+        ``fs_mid``; stage 2 is a Kaiser FIR/polyphase stage from ``fs_mid`` to
+        ``fs_out``.
+
+    Notes:
+        This function designs the processing plan only. Use
+        :func:`downconvert_fm_voltage` to process voltage samples.
+    """
 
     config.validate()
     stages = (
@@ -94,6 +118,21 @@ def downconvert_fm_voltage(
 ) -> Tuple[np.ndarray, float]:
     """Convert raw voltage samples to one FM channel as complex IQ.
 
+    Args:
+        raw_data: One-dimensional real ADC-voltage samples. Integer samples are
+            converted to floating point without normalizing their ADC scale.
+        rf_frequency_hz: Absolute RF frequency to translate to zero frequency,
+            in Hz (for example ``98.3e6``).
+        config: DDC sample-rate, filter, and chunk settings.
+        initial_phase: Starting phase of the digital local oscillator, in
+            radians. File-oriented processing normally calculates this from
+            the absolute raw-file start sample; direct array use can leave it
+            at zero.
+
+    Returns:
+        ``(iq, final_phase)`` where ``iq`` is complex64 at ``config.fs_out``
+        and ``final_phase`` can continue the local oscillator in a later block.
+
     The high-rate input is mixed and IIR-filtered in bounded chunks. Filter
     state, NCO phase, and the decimation grid remain continuous between
     chunks. A second, linear-phase polyphase stage selects the 90 kHz FM
@@ -116,14 +155,15 @@ def downconvert_fm_voltage(
         dtype=np.complex128,
     )
 
-    scale = _adc_scale(raw_data.dtype)
     phase = float(initial_phase)
     input_count = 0
     stage_1_blocks = []
 
     for start in range(0, len(raw_data), config.chunk_samples):
         stop = min(start + config.chunk_samples, len(raw_data))
-        voltage = np.asarray(raw_data[start:stop], dtype=np.float32) / scale
+        # Preserve the original ADC-count scale while converting integer
+        # samples to a type suitable for mixing and filtering.
+        voltage = np.asarray(raw_data[start:stop], dtype=np.float32)
         mixed, phase = frequency_mixing(
             voltage,
             rf_frequency_hz,

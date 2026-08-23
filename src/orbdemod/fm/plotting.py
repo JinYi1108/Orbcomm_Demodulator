@@ -29,8 +29,30 @@ def save_fm_psd_plot(
     mpx_psd: np.ndarray,
     rf_frequency_hz: float,
     label: str,
+    waveform_start_seconds: float,
+    waveform_duration_seconds: float,
 ) -> None:
-    """Save RF-channel and FM-composite PSDs with four FM regions marked."""
+    """Save the three-panel FM diagnostic figure.
+
+    Args:
+        output_path: Destination image filename, normally ``fm_psd.png``.
+        iq: Complete selected complex FM-channel IQ sequence.
+        mpx_hz: Complete selected discriminator output in Hz.
+        fs: IQ and MPX sample rate in samples/s.
+        mpx_frequencies: Non-negative MPX PSD frequency axis in Hz.
+        mpx_psd: Linear MPX power spectral density.
+        rf_frequency_hz: Absolute tuned station frequency used in the title.
+        label: Human-readable experiment label used in the title.
+        waveform_start_seconds: Third-panel start relative to the selected
+            analysis window, not relative to the raw file.
+        waveform_duration_seconds: Duration displayed only in the third panel.
+
+    Notes:
+        Panel 1 computes an IQ PSD from the full selected window. Panel 2 plots
+        the supplied full-window MPX PSD and marks the 0--15, 19, 23--53, and
+        57 kHz broadcast-FM regions. Panel 3 plots only the requested local MPX
+        time segment. The function writes the image and returns ``None``.
+    """
 
     nperseg = min(len(iq), max(2048, int(round(0.020 * fs))))
     rf_frequencies, rf_psd = signal.welch(
@@ -80,12 +102,31 @@ def save_fm_psd_plot(
     axes[1].legend(loc="best", fontsize=8, ncol=2)
     axes[1].grid(alpha=0.25)
 
-    time_limit = min(len(mpx_hz), int(round(0.050 * fs)))
-    time_ms = np.arange(time_limit, dtype=np.float64) / fs * 1e3
-    axes[2].plot(time_ms, mpx_hz[:time_limit] / 1e3, linewidth=0.7)
-    axes[2].set_xlabel("Time (ms)")
+    waveform_start_sample = int(round(waveform_start_seconds * fs))
+    waveform_start_sample = min(waveform_start_sample, len(mpx_hz) - 1)
+    waveform_sample_count = max(1, int(round(waveform_duration_seconds * fs)))
+    waveform_stop_sample = min(
+        waveform_start_sample + waveform_sample_count,
+        len(mpx_hz),
+    )
+    waveform_time_ms = (
+        np.arange(waveform_start_sample, waveform_stop_sample, dtype=np.float64)
+        / fs
+        * 1e3
+    )
+    axes[2].plot(
+        waveform_time_ms,
+        mpx_hz[waveform_start_sample:waveform_stop_sample] / 1e3,
+        linewidth=0.7,
+    )
+    axes[2].set_xlabel("Time within selected analysis window (ms)")
     axes[2].set_ylabel("Instantaneous frequency deviation (kHz)")
-    axes[2].set_title("First 50 ms of the FM composite waveform")
+    axes[2].set_title(
+        "FM composite waveform: {:.1f}--{:.1f} ms".format(
+            waveform_start_sample / fs * 1e3,
+            waveform_stop_sample / fs * 1e3,
+        )
+    )
     axes[2].grid(alpha=0.25)
 
     fig.tight_layout()

@@ -19,6 +19,7 @@ from orbdemod.fm import (
     make_fm_decimation_stages,
     quadrature_discriminator,
 )
+from orbdemod.fm.pipeline import _prepare_output_dir
 
 
 def synthetic_mpx(time: np.ndarray) -> np.ndarray:
@@ -34,6 +35,85 @@ def synthetic_mpx(time: np.ndarray) -> np.ndarray:
 
 
 class FMPSDTest(unittest.TestCase):
+    def test_output_directory_naming_collision_and_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            input_path = root / "20250415-1940-0.dat"
+
+            first = _prepare_output_dir(
+                input_path=input_path,
+                output_dir=None,
+                output_root=root / "results",
+                rf_frequency_hz=98.3e6,
+                start_seconds=30.0,
+                duration_seconds=3.0,
+                overwrite=False,
+            )
+            self.assertEqual(
+                first,
+                (root / "results/20250415-1940-0/98.3MHz/30_3").resolve(),
+            )
+
+            second = _prepare_output_dir(
+                input_path=input_path,
+                output_dir=None,
+                output_root=root / "results",
+                rf_frequency_hz=98.3e6,
+                start_seconds=30.0,
+                duration_seconds=3.0,
+                overwrite=False,
+            )
+            self.assertEqual(second.name, "30_3_run02")
+
+            more_precise_frequency = _prepare_output_dir(
+                input_path=input_path,
+                output_dir=None,
+                output_root=root / "results",
+                rf_frequency_hz=98.33e6,
+                start_seconds=30.0,
+                duration_seconds=3.0,
+                overwrite=False,
+            )
+            self.assertEqual(more_precise_frequency.parent.name, "98.33MHz")
+
+            explicit = root / "chosen_output"
+            self.assertEqual(
+                _prepare_output_dir(
+                    input_path=input_path,
+                    output_dir=explicit,
+                    output_root=root / "unused",
+                    rf_frequency_hz=98.3e6,
+                    start_seconds=30.0,
+                    duration_seconds=3.0,
+                    overwrite=False,
+                ),
+                explicit.resolve(),
+            )
+            self.assertEqual(
+                _prepare_output_dir(
+                    input_path=input_path,
+                    output_dir=explicit,
+                    output_root=root / "unused",
+                    rf_frequency_hz=98.3e6,
+                    start_seconds=30.0,
+                    duration_seconds=3.0,
+                    overwrite=False,
+                ).name,
+                "chosen_output_run02",
+            )
+            self.assertEqual(
+                _prepare_output_dir(
+                    input_path=input_path,
+                    output_dir=explicit,
+                    output_root=root / "unused",
+                    rf_frequency_hz=98.3e6,
+                    start_seconds=30.0,
+                    duration_seconds=3.0,
+                    overwrite=True,
+                ),
+                explicit.resolve(),
+            )
+
     def test_window_selection_modes_are_mutually_exclusive(self) -> None:
         with self.assertRaisesRegex(ValueError, "exactly one window mode"):
             FMPSDConfig(rf_frequency_hz=98.3e6).validate()
@@ -55,6 +135,30 @@ class FMPSDTest(unittest.TestCase):
         self.assertEqual(mode, "fraction")
         self.assertEqual(start, 2.0)
         self.assertEqual(duration, 2.0)
+
+    def test_waveform_window_defaults_to_centre_and_can_be_selected(self) -> None:
+        centred_config = FMPSDConfig(
+            rf_frequency_hz=98.3e6,
+            start_seconds=0.0,
+            duration_seconds=1.0,
+        )
+        start, duration = centred_config.resolve_waveform_window(0.50)
+        self.assertAlmostEqual(start, 0.225)
+        self.assertAlmostEqual(duration, 0.050)
+
+        selected_config = FMPSDConfig(
+            rf_frequency_hz=98.3e6,
+            start_seconds=0.0,
+            duration_seconds=1.0,
+            waveform_start_seconds=0.12,
+            waveform_duration_seconds=0.03,
+        )
+        start, duration = selected_config.resolve_waveform_window(0.50)
+        self.assertAlmostEqual(start, 0.12)
+        self.assertAlmostEqual(duration, 0.03)
+
+        with self.assertRaisesRegex(ValueError, "inside the selected"):
+            selected_config.resolve_waveform_window(0.10)
 
     def test_default_filter_response_meets_specification(self) -> None:
         config = FMDDCConfig()
@@ -113,6 +217,8 @@ class FMPSDTest(unittest.TestCase):
 
         self.assertEqual(len(one_block), len(many_blocks))
         np.testing.assert_allclose(one_block, many_blocks, rtol=2e-5, atol=2e-5)
+        steady_state_level = float(np.median(np.abs(one_block[len(one_block) // 2 :])))
+        self.assertGreater(steady_state_level, 5_000.0)
 
     def test_discriminator_recovers_mpx_components(self) -> None:
         fs = 240_000.0
@@ -168,14 +274,23 @@ class FMPSDTest(unittest.TestCase):
             )
             summary = analyze_fm_psd_file(input_path, output_dir, config)
 
-            self.assertEqual(summary["classification"], "not_performed")
+            self.assertNotIn("classification", summary)
+            self.assertEqual(summary["output_dir"], str(output_dir.resolve()))
+            self.assertAlmostEqual(
+                summary["waveform_duration_seconds"],
+                0.05,
+            )
+            self.assertAlmostEqual(
+                summary["waveform_start_seconds"],
+                0.024997916666666665,
+            )
             self.assertLess(abs(float(summary["pilot_peak_hz"]) - 19_000.0), 60.0)
             self.assertTrue((output_dir / "fm_psd.png").is_file())
             self.assertTrue((output_dir / "fm_arrays.npz").is_file())
             self.assertTrue((output_dir / "summary.json").is_file())
             self.assertTrue((output_dir / "run_config.json").is_file())
 
-            fraction_output_dir = root / "fraction_results"
+            automatic_root = root / "automatic_results"
             fraction_config = FMPSDConfig(
                 rf_frequency_hz=rf_frequency_hz,
                 start_fraction=0.1875,
@@ -186,16 +301,25 @@ class FMPSDTest(unittest.TestCase):
             )
             fraction_summary = analyze_fm_psd_file(
                 input_path,
-                fraction_output_dir,
+                None,
                 fraction_config,
+                output_root=automatic_root,
+            )
+            fraction_output_dir = (
+                automatic_root / "synthetic_fm" / "1MHz" / "0.03_0.1"
             )
             self.assertEqual(fraction_summary["selection_mode"], "fraction")
+            self.assertEqual(
+                fraction_summary["output_dir"],
+                str(fraction_output_dir.resolve()),
+            )
             self.assertAlmostEqual(fraction_summary["start_seconds"], 0.03)
             self.assertAlmostEqual(fraction_summary["duration_seconds"], 0.10)
             self.assertLess(
                 abs(float(fraction_summary["pilot_peak_hz"]) - 19_000.0),
                 60.0,
             )
+            self.assertTrue((fraction_output_dir / "fm_psd.png").is_file())
 
 
 if __name__ == "__main__":

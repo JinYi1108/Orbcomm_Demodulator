@@ -37,8 +37,11 @@ DURATION_SECONDS = 0.2
 START_FRACTION = 0.25
 STOP_FRACTION = 0.30
 
-# 输出文件夹。
-OUTPUT_DIR = Path("./results/fm_98p3_simple")
+# 输出位置。None 表示在 OUTPUT_ROOT 下自动按“文件名/频率/时间段”命名；
+# 也可以填写 Path("/指定/文件夹")，直接使用自己给出的路径作为基准。
+OUTPUT_DIR = None
+OUTPUT_ROOT = Path("./results")
+OVERWRITE = False
 LABEL = "FM 98.3 MHz direct test"
 
 # 21CMA 原始电压格式和采样率。
@@ -57,14 +60,18 @@ FIRST_STAGE_PASSBAND_RIPPLE_DB = 0.25
 CHUNK_SAMPLES = 10_000_000
 PADDING_SECONDS = 0.020
 
+# 第三张图显示分析时间段中的哪一小段。
+# None 表示自动截取分析时间段正中央；也可以填 0.10 表示从分析段内
+# 第 0.10 秒开始画。这个起点不是原始文件中的绝对时间。
+WAVEFORM_START_SECONDS = None
+WAVEFORM_DURATION_SECONDS = 0.050
+
 
 # =============================================================================
 # 检查参数并读取指定时间段
 # =============================================================================
 
 INPUT_FILE = INPUT_FILE.expanduser().resolve()
-OUTPUT_DIR = OUTPUT_DIR.expanduser().resolve()
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 if not INPUT_FILE.is_file():
     raise FileNotFoundError(
@@ -74,6 +81,10 @@ if not 0 < RF_FREQUENCY_HZ < FS_IN / 2.0:
     raise ValueError("RF_FREQUENCY_HZ 必须位于 0 和 FS_IN/2 之间。")
 if not 0 < PASSBAND_HZ < STOPBAND_HZ <= FS_OUT / 2.0:
     raise ValueError("需要满足 0 < PASSBAND_HZ < STOPBAND_HZ <= FS_OUT/2。")
+if WAVEFORM_START_SECONDS is not None and WAVEFORM_START_SECONDS < 0:
+    raise ValueError("WAVEFORM_START_SECONDS 不能为负。")
+if WAVEFORM_DURATION_SECONDS <= 0:
+    raise ValueError("WAVEFORM_DURATION_SECONDS 必须大于0。")
 
 DECIMATION_1 = int(round(FS_IN / FS_MID))
 DECIMATION_2 = int(round(FS_MID / FS_OUT))
@@ -109,6 +120,42 @@ if requested_stop_seconds > file_duration_seconds:
         )
     )
 
+# 自动目录示例：results/20250415-1940-0/98.3MHz/30_3/。
+# 数字最多保留六位小数，并去掉没有意义的末尾零。
+if OUTPUT_DIR is None:
+    frequency_name = (
+        "{:.6f}".format(RF_FREQUENCY_HZ / 1e6).rstrip("0").rstrip(".")
+        + "MHz"
+    )
+    start_name = (
+        "{:.6f}".format(requested_start_seconds).rstrip("0").rstrip(".")
+    )
+    duration_name = (
+        "{:.6f}".format(requested_duration_seconds).rstrip("0").rstrip(".")
+    )
+    output_base_dir = (
+        OUTPUT_ROOT.expanduser()
+        / INPUT_FILE.stem
+        / frequency_name
+        / "{}_{}".format(start_name, duration_name)
+    ).resolve()
+else:
+    output_base_dir = Path(OUTPUT_DIR).expanduser().resolve()
+
+OUTPUT_DIR = output_base_dir
+if OUTPUT_DIR.exists() and not OVERWRITE:
+    run_number = 2
+    while True:
+        candidate = output_base_dir.with_name(
+            "{}_run{:02d}".format(output_base_dir.name, run_number)
+        )
+        if not candidate.exists():
+            OUTPUT_DIR = candidate
+            break
+        run_number += 1
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=OVERWRITE)
+
 padded_start_seconds = max(0.0, requested_start_seconds - PADDING_SECONDS)
 padded_stop_seconds = min(
     file_duration_seconds,
@@ -119,6 +166,7 @@ stop_sample = int(round(padded_stop_seconds * FS_IN))
 raw_window = raw[start_sample:stop_sample]
 
 print("输入文件：", INPUT_FILE)
+print("输出目录：", OUTPUT_DIR)
 print("文件总时长：{:.6f} s".format(file_duration_seconds))
 print("目标频率：{:.6f} MHz".format(RF_FREQUENCY_HZ / 1e6))
 print(
@@ -150,12 +198,6 @@ first_sos = signal.butter(
 )
 first_filter_state = np.zeros((first_sos.shape[0], 2), dtype=np.complex128)
 
-if np.issubdtype(dtype, np.integer):
-    dtype_info = np.iinfo(dtype)
-    adc_scale = float(max(abs(dtype_info.min), abs(dtype_info.max)))
-else:
-    adc_scale = 1.0
-
 # 让本振相位对应原始文件中的绝对起始采样点。
 phase_step = 2.0 * np.pi * RF_FREQUENCY_HZ / FS_IN
 phase = np.remainder(phase_step * start_sample + np.pi, 2.0 * np.pi) - np.pi
@@ -164,8 +206,8 @@ stage_1_blocks = []
 
 for block_start in range(0, len(raw_window), CHUNK_SAMPLES):
     block_stop = min(block_start + CHUNK_SAMPLES, len(raw_window))
+    # 转换为浮点数，但保留原始ADC计数尺度。
     voltage = np.asarray(raw_window[block_start:block_stop], dtype=np.float32)
-    voltage = voltage / adc_scale
 
     sample_index = np.arange(len(voltage), dtype=np.float64)
     block_phase = phase + phase_step * sample_index
@@ -304,7 +346,7 @@ rf_psd = np.maximum(np.real(rf_psd[rf_order]), np.finfo(float).tiny)
 
 
 # =============================================================================
-# 绘图：RF信道、FM复合基带PSD、前50 ms鉴频波形
+# 绘图：RF信道、FM复合基带PSD、指定时间段的鉴频波形
 # =============================================================================
 
 cache_root = Path(tempfile.gettempdir()) / "orbdemod-fm-one-file-cache"
@@ -352,12 +394,52 @@ axes[1].set_title("FM discriminator output: four broadcast-FM regions")
 axes[1].legend(loc="best", fontsize=8, ncol=2)
 axes[1].grid(alpha=0.25)
 
-time_limit = min(len(mpx_hz), int(round(0.050 * FS_OUT)))
-time_ms = np.arange(time_limit, dtype=np.float64) / FS_OUT * 1e3
-axes[2].plot(time_ms, mpx_hz[:time_limit] / 1e3, linewidth=0.7)
-axes[2].set_xlabel("Time (ms)")
+available_waveform_seconds = len(mpx_hz) / FS_OUT
+waveform_duration_seconds = min(
+    WAVEFORM_DURATION_SECONDS,
+    available_waveform_seconds,
+)
+if WAVEFORM_START_SECONDS is None:
+    waveform_start_seconds = 0.5 * (
+        available_waveform_seconds - waveform_duration_seconds
+    )
+else:
+    waveform_start_seconds = WAVEFORM_START_SECONDS
+    if waveform_start_seconds >= available_waveform_seconds:
+        raise ValueError("WAVEFORM_START_SECONDS 必须位于所选分析时间段内部。")
+    waveform_duration_seconds = min(
+        waveform_duration_seconds,
+        available_waveform_seconds - waveform_start_seconds,
+    )
+
+waveform_start_sample = int(round(waveform_start_seconds * FS_OUT))
+waveform_start_sample = min(waveform_start_sample, len(mpx_hz) - 1)
+waveform_sample_count = max(
+    1,
+    int(round(waveform_duration_seconds * FS_OUT)),
+)
+waveform_stop_sample = min(
+    waveform_start_sample + waveform_sample_count,
+    len(mpx_hz),
+)
+waveform_time_ms = (
+    np.arange(waveform_start_sample, waveform_stop_sample, dtype=np.float64)
+    / FS_OUT
+    * 1e3
+)
+axes[2].plot(
+    waveform_time_ms,
+    mpx_hz[waveform_start_sample:waveform_stop_sample] / 1e3,
+    linewidth=0.7,
+)
+axes[2].set_xlabel("Time within selected analysis window (ms)")
 axes[2].set_ylabel("Instantaneous frequency deviation (kHz)")
-axes[2].set_title("First 50 ms of the FM composite waveform")
+axes[2].set_title(
+    "FM composite waveform: {:.1f}--{:.1f} ms".format(
+        waveform_start_sample / FS_OUT * 1e3,
+        waveform_stop_sample / FS_OUT * 1e3,
+    )
+)
 axes[2].grid(alpha=0.25)
 
 figure.tight_layout()
@@ -381,6 +463,7 @@ np.savez_compressed(
 
 summary = {
     "input_file": str(INPUT_FILE),
+    "output_dir": str(OUTPUT_DIR),
     "label": LABEL,
     "rf_frequency_hz": RF_FREQUENCY_HZ,
     "selection_mode": WINDOW_MODE,
@@ -391,10 +474,13 @@ summary = {
     "input_file_duration_seconds": file_duration_seconds,
     "input_dtype": dtype.str,
     "iq_sample_rate_hz": FS_OUT,
+    "waveform_start_seconds": waveform_start_sample / FS_OUT,
+    "waveform_duration_seconds": (
+        waveform_stop_sample - waveform_start_sample
+    ) / FS_OUT,
     "carrier_offset_hz": carrier_offset_hz,
     "pilot_peak_hz": pilot_peak_hz,
     "pilot_local_contrast_db": pilot_local_contrast_db,
-    "classification": "not_performed",
 }
 with (OUTPUT_DIR / "summary.json").open("w", encoding="utf-8") as output_file:
     json.dump(summary, output_file, ensure_ascii=False, indent=2, allow_nan=False)

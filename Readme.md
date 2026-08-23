@@ -1,9 +1,14 @@
-# Orbcomm_Demodulator 
-[![PyPI version](https://badge.fury.io/py/orbdemod.svg)](https://badge.fury.io/py/orbdemod)
+# LFdemod
 [![DOI](https://zenodo.org/badge/1130552672.svg)](https://doi.org/10.5281/zenodo.18214211)
 
-**Orbcomm_Demodulator** is a Python-based toolkit for demodulating **ORBCOMM** satellite downlink signals.  
-This project was originally developed to process **raw voltage data captured by the 21CMA (21 Centimeter Array)** radio telescope, and aims to provide a **complete, standardized processing pipeline** from raw samples to decoded ORBCOMM data packets.
+**LFdemod** is a Python toolkit for offline demodulation and diagnostic
+processing of low-frequency raw-voltage data. It began as an **ORBCOMM**
+satellite downlink demodulator for **21CMA (21 Centimeter Array)** recordings
+and is being extended with a broadcast-FM processing path.
+
+The project name is written `LFdemod`. Its terminal command and new public
+Python package are both lowercase: `lfdemod`. The historical `orbdemod`
+package remains available as a compatibility layer for existing ORBCOMM code.
 
 ---
 
@@ -20,8 +25,8 @@ The demodulation chain includes:
 
 ## Installation
 
-####  From PyPI (Recommended)
-You can install the stable version directly via `pip`:
+#### Legacy ORBCOMM release from PyPI
+The earlier ORBCOMM-only release remains available as:
 ```bash
 pip install orbdemod
 ```
@@ -39,6 +44,13 @@ For development and debugging, an editable installation is recommended:
 git clone https://github.com/JinYi1108/Orbcomm_Demodulator.git
 cd Orbcomm_Demodulator
 pip install -e .
+```
+
+After the editable install, inspect the current command interface with:
+
+```bash
+lfdemod --help
+lfdemod fm --help
 ```
 ---
 ## Examples and Test Data
@@ -126,6 +138,9 @@ two-pass response rather than a single forward pass.
 
 ## Experimental broadcast-FM PSD path
 
+For a parameter-by-parameter explanation, automatic output naming rules, and
+Python API examples, see [FM 功能使用说明](docs/FM使用说明.md).
+
 The `fm-dev` branch contains an offline, deliberately shallow FM path:
 
 ```text
@@ -141,29 +156,64 @@ stereo-difference band (centred on the suppressed 38 kHz subcarrier), and
 57 kHz RDS region. It does not automatically classify a window as broadcast
 FM.
 
-After an editable install, analyze one window with:
+After an editable install, analyze one window with the lowercase command:
 
 ```bash
-python examples/analyze_fm_psd.py \
+lfdemod fm \
   --input /path/to/20250415-1940-0.dat \
   --rf-frequency 100.1e6 \
   --start 0.0 \
   --duration 0.5 \
-  --output-dir results/direct_100p1 \
   --label direct_100p1
 ```
+
+Without `--output-dir`, this run is saved automatically under:
+
+```text
+results/20250415-1940-0/100.1MHz/0_0.5/
+```
+
+Use `--output-root /another/root` to change only the automatic root. Use
+`--output-dir /exact/path` to supply the output-directory base explicitly.
+
+The third plot shows 50 ms from the centre of the selected analysis window by
+default. To choose it explicitly, use `--waveform-start` (relative to the
+selected analysis window, not to the raw file) and `--waveform-duration`:
+
+```bash
+lfdemod fm \
+  --input /path/to/20250415-1940-0.dat \
+  --rf-frequency 100.1e6 \
+  --start 3.0 \
+  --duration 0.5 \
+  --waveform-start 0.12 \
+  --waveform-duration 0.03 \
+  --output-root results
+```
+
+This plots 120--150 ms within the 0.5 s analysis window, corresponding to
+3.120--3.150 s in the original file. The first two PSD plots still use the
+whole 0.5 s analysis window.
 
 Alternatively, select a window by file fraction (the two window modes are
 mutually exclusive):
 
 ```bash
-python examples/analyze_fm_psd.py \
+lfdemod fm \
   --input /path/to/20250415-1940-0.dat \
   --rf-frequency 100.1e6 \
   --start-fraction 0.25 \
-  --stop-fraction 0.30 \
-  --output-dir results/direct_100p1_fraction
+  --stop-fraction 0.30
 ```
+
+Automatic names use the resolved start and duration in seconds. Numeric names
+drop unnecessary trailing zeros, so 98.3 MHz and 98.33 MHz become `98.3MHz`
+and `98.33MHz`, while a 30-second start and 3-second duration become `30_3`.
+
+Existing directories are never silently overwritten. A repeated run appends
+`_run02`, then `_run03`, and so on. Pass `--overwrite` only when the fixed
+result files in the selected base directory should be replaced. This collision
+rule also applies when `--output-dir` is supplied explicitly.
 
 The default high-rate processing block is 10,000,000 input samples and remains
 configurable with `--chunk-samples`. Real-data benchmarks at 2M, 5M, 10M, and
@@ -171,3 +221,6 @@ configurable with `--chunk-samples`. Real-data benchmarks at 2M, 5M, 10M, and
 
 The output directory contains `fm_psd.png`, `fm_arrays.npz`, `summary.json`,
 and `run_config.json`.
+
+`python examples/analyze_fm_psd.py ...` remains as a thin compatibility
+wrapper and accepts the same FM options. New usage should prefer `lfdemod fm`.

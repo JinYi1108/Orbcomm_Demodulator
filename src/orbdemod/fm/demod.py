@@ -9,7 +9,22 @@ from scipy import signal
 
 
 def quadrature_discriminator(iq: np.ndarray, fs: float) -> Tuple[np.ndarray, float]:
-    """Return FM composite baseband in hertz and the mean carrier offset."""
+    """Recover the FM composite (MPX) waveform from complex channel IQ.
+
+    Args:
+        iq: One-dimensional complex FM-channel samples.
+        fs: IQ sample rate in samples/s; normally ``FMDDCConfig.fs_out``.
+
+    Returns:
+        ``(mpx_hz, carrier_offset_hz)``. ``mpx_hz`` contains one fewer sample
+        than ``iq`` and expresses instantaneous frequency deviation in Hz after
+        subtracting its mean. ``carrier_offset_hz`` is that removed mean.
+
+    Notes:
+        This is FM discrimination, not complete stereo/audio decoding. The MPX
+        waveform can still contain 0--15 kHz audio, the 19 kHz pilot,
+        23--53 kHz stereo difference, and 57 kHz RDS components.
+    """
 
     iq = np.asarray(iq)
     if iq.ndim != 1 or len(iq) < 2:
@@ -33,7 +48,25 @@ def compute_mpx_psd(
     fs: float,
     segment_seconds: float = 0.050,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Estimate a one-sided Welch PSD of the real FM composite baseband."""
+    """Estimate a one-sided Welch PSD of the real FM composite baseband.
+
+    Args:
+        mpx_hz: Real MPX waveform returned by
+            :func:`quadrature_discriminator`.
+        fs: MPX sample rate in samples/s.
+        segment_seconds: Desired Welch segment duration. At 240 kS/s the
+            default 0.050 s corresponds to 12,000 samples and about 20 Hz
+            frequency-bin spacing.
+
+    Returns:
+        ``(frequencies_hz, psd)`` for the non-negative frequency axis. ``psd``
+        uses SciPy's density scaling and is floored above zero for safe dB
+        conversion.
+
+    Notes:
+        ``segment_seconds`` controls Welch PSD resolution and averaging. It is
+        unrelated to the 50 ms time-domain segment shown in the third plot.
+    """
 
     mpx_hz = np.asarray(mpx_hz)
     if mpx_hz.ndim != 1 or len(mpx_hz) < 256:
@@ -59,7 +92,22 @@ def pilot_peak_summary(
     frequencies: np.ndarray,
     psd: np.ndarray,
 ) -> Tuple[float, float]:
-    """Return 19 kHz peak frequency and local peak-to-neighbour contrast."""
+    """Measure the strongest candidate near the 19 kHz stereo-pilot frequency.
+
+    Args:
+        frequencies: Frequency axis in Hz, normally returned by
+            :func:`compute_mpx_psd`.
+        psd: Linear power spectral density corresponding to ``frequencies``.
+
+    Returns:
+        ``(peak_hz, contrast_db)``. The peak is searched from 18.8 to 19.2 kHz
+        and compared with the neighboring 18.0--18.7 and 19.3--20.0 kHz
+        regions. Both values are NaN if those bands are not covered.
+
+    Notes:
+        A strong 19 kHz candidate supports stereo broadcast FM, but this metric
+        alone is not an automatic or definitive signal classification.
+    """
 
     frequencies = np.asarray(frequencies)
     psd = np.asarray(psd)
