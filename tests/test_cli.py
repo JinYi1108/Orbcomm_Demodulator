@@ -1,4 +1,8 @@
-"""Tests for the public lowercase ``lfdemod`` interface."""
+"""Tests for the public lowercase ``lfdemod`` interface.
+
+Test methods return no values.  They verify the FM public import, root help,
+FM help, Air Band AM help, and lowercase version output respectively.
+"""
 
 from __future__ import annotations
 
@@ -34,6 +38,19 @@ class LFdemodCLITest(unittest.TestCase):
         self.assertIn("usage: lfdemod fm", help_text)
         self.assertIn("--rf-frequency", help_text)
         self.assertIn("--waveform-duration", help_text)
+        self.assertIn("--output-root", help_text)
+
+    def test_airband_am_help_lists_key_options(self) -> None:
+        output = io.StringIO()
+        with self.assertRaises(SystemExit) as raised, redirect_stdout(output):
+            main(["airband-am", "--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        help_text = output.getvalue()
+        self.assertIn("usage: lfdemod airband-am", help_text)
+        self.assertIn("--rf-frequency", help_text)
+        self.assertIn("--duration", help_text)
+        self.assertIn("--channel-passband", help_text)
         self.assertIn("--output-root", help_text)
 
     def test_version_uses_lowercase_command_name(self) -> None:
