@@ -102,7 +102,9 @@ def downconvert_airband_am_voltage(
         )
         filtered, state = signal.sosfilt(sos, mixed, zi=state)
         first_index = (-input_count) % decimation
-        blocks.append(filtered[first_index::decimation])
+        # Copy only the decimated samples. Keeping a strided view here would
+        # retain the complete high-rate filtered block until concatenation.
+        blocks.append(filtered[first_index::decimation].copy())
         input_count += len(voltage)
 
     intermediate_iq = np.concatenate(blocks)
