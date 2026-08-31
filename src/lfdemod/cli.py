@@ -32,9 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "-v",
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
+        help="Show the installed LFdemod version and exit.",
     )
     subparsers = parser.add_subparsers(
         dest="command",

@@ -48,21 +48,25 @@ def add_fm_subparser(
 
     window = parser.add_argument_group("file window (choose seconds or fraction)")
     window.add_argument(
+        "-s",
         "--start",
         type=float,
         help="Start time relative to the raw-file beginning, in seconds.",
     )
     window.add_argument(
+        "-d",
         "--duration",
         type=float,
         help="Analysis duration in seconds.",
     )
     window.add_argument(
+        "-sf",
         "--start-fraction",
         type=float,
         help="Start position as a fraction of total file duration, from 0 to 1.",
     )
     window.add_argument(
+        "-ef",
         "--stop-fraction",
         type=float,
         help="Stop position as a fraction of total file duration, from 0 to 1.",
@@ -70,53 +74,62 @@ def add_fm_subparser(
 
     ddc = parser.add_argument_group("FM DDC")
     ddc.add_argument(
+        "-dt",
         "--dtype",
         default="<i2",
         help="Raw NumPy dtype (default: little-endian signed int16, <i2).",
     )
     ddc.add_argument(
+        "-sr",
         "--sample-rate",
         type=float,
         default=480e6,
         help="Raw real-voltage sample rate in samples/s (default: 480e6).",
     )
     ddc.add_argument(
+        "-ir",
         "--intermediate-rate",
         type=float,
         default=2.4e6,
         help="First-stage output rate in samples/s (default: 2.4e6).",
     )
     ddc.add_argument(
+        "-cr",
         "--channel-rate",
         type=float,
         default=240e3,
         help="Final complex-IQ rate in samples/s (default: 240e3).",
     )
     ddc.add_argument(
+        "-pb",
         "--passband",
         type=float,
         default=90e3,
         help="One-sided FM channel passband in Hz (default: 90e3).",
     )
     ddc.add_argument(
+        "-sb",
         "--stopband",
         type=float,
         default=120e3,
         help="One-sided final stopband start in Hz (default: 120e3).",
     )
     ddc.add_argument(
+        "-sa",
         "--stopband-attenuation",
         type=float,
         default=60.0,
         help="Required stopband attenuation in dB (default: 60).",
     )
     ddc.add_argument(
+        "-pd",
         "--padding",
         type=float,
         default=0.020,
         help="Filter-edge padding on each side, in seconds (default: 0.020).",
     )
     ddc.add_argument(
+        "-cs",
         "--chunk-samples",
         type=int,
         default=10_000_000,
@@ -125,6 +138,7 @@ def add_fm_subparser(
 
     waveform = parser.add_argument_group("third diagnostic plot")
     waveform.add_argument(
+        "-ws",
         "--waveform-start",
         type=float,
         default=None,
@@ -134,6 +148,7 @@ def add_fm_subparser(
         ),
     )
     waveform.add_argument(
+        "-wd",
         "--waveform-duration",
         type=float,
         default=0.050,
@@ -142,6 +157,7 @@ def add_fm_subparser(
 
     output = parser.add_argument_group("output")
     output.add_argument(
+        "-o",
         "--output-dir",
         help=(
             "Explicit output-directory base. If omitted, name it from input, "
@@ -149,16 +165,19 @@ def add_fm_subparser(
         ),
     )
     output.add_argument(
+        "-or",
         "--output-root",
         default="results",
         help="Root for automatic output directories (default: results).",
     )
     output.add_argument(
+        "-ow",
         "--overwrite",
         action="store_true",
         help="Replace fixed files in the base directory instead of adding run02.",
     )
     output.add_argument(
+        "-l",
         "--label",
         default="direct_fm_test",
         help="Human-readable plot and summary label.",

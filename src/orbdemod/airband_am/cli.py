@@ -32,20 +32,28 @@ def add_airband_am_subparser(
             "ADC clipping."
         ),
     )
-    parser.add_argument("--input", required=True, help="Raw real-voltage file.")
     parser.add_argument(
+        "-i",
+        "--input",
+        required=True,
+        help="Raw real-voltage input file.",
+    )
+    parser.add_argument(
+        "-f",
         "--rf-frequency",
         required=True,
         type=float,
         help="Known airband RF carrier to tune, in Hz.",
     )
     parser.add_argument(
+        "-s",
         "--start",
         required=True,
         type=float,
         help="Requested start relative to the raw-file beginning, in seconds.",
     )
     parser.add_argument(
+        "-d",
         "--duration",
         required=True,
         type=float,
@@ -53,18 +61,84 @@ def add_airband_am_subparser(
     )
 
     ddc = parser.add_argument_group("Air Band AM DDC")
-    ddc.add_argument("--dtype", default="<i2", help="Raw NumPy dtype (default: <i2).")
-    ddc.add_argument("--sample-rate", type=float, default=480e6)
-    ddc.add_argument("--intermediate-rate", type=float, default=2.4e6)
-    ddc.add_argument("--channel-rate", type=float, default=60e3)
-    ddc.add_argument("--first-stage-passband", type=float, default=100e3)
-    ddc.add_argument("--first-stage-stopband", type=float, default=1.0e6)
-    ddc.add_argument("--channel-passband", type=float, default=5e3)
-    ddc.add_argument("--channel-stopband", type=float, default=10e3)
-    ddc.add_argument("--passband-ripple", type=float, default=0.5)
-    ddc.add_argument("--stopband-attenuation", type=float, default=70.0)
-    ddc.add_argument("--chunk-samples", type=int, default=5_000_000)
     ddc.add_argument(
+        "-dt",
+        "--dtype",
+        default="<i2",
+        help="Raw NumPy dtype (default: little-endian signed int16, <i2).",
+    )
+    ddc.add_argument(
+        "-sr",
+        "--sample-rate",
+        type=float,
+        default=480e6,
+        help="Raw real-voltage sample rate in samples/s (default: 480e6).",
+    )
+    ddc.add_argument(
+        "-ir",
+        "--intermediate-rate",
+        type=float,
+        default=2.4e6,
+        help="First-stage complex-IQ rate in samples/s (default: 2.4e6).",
+    )
+    ddc.add_argument(
+        "-cr",
+        "--channel-rate",
+        type=float,
+        default=60e3,
+        help="Final channel complex-IQ rate in samples/s (default: 60e3).",
+    )
+    ddc.add_argument(
+        "-fp",
+        "--first-stage-passband",
+        type=float,
+        default=100e3,
+        help="One-sided first-stage passband edge in Hz (default: 100e3).",
+    )
+    ddc.add_argument(
+        "-fs",
+        "--first-stage-stopband",
+        type=float,
+        default=1.0e6,
+        help="One-sided first-stage stopband edge in Hz (default: 1.0e6).",
+    )
+    ddc.add_argument(
+        "-cp",
+        "--channel-passband",
+        type=float,
+        default=5e3,
+        help="One-sided final voice-channel passband edge in Hz (default: 5e3).",
+    )
+    ddc.add_argument(
+        "-cb",
+        "--channel-stopband",
+        type=float,
+        default=10e3,
+        help="One-sided final channel stopband edge in Hz (default: 10e3).",
+    )
+    ddc.add_argument(
+        "-pr",
+        "--passband-ripple",
+        type=float,
+        default=0.5,
+        help="Maximum DDC passband ripple in dB (default: 0.5).",
+    )
+    ddc.add_argument(
+        "-sa",
+        "--stopband-attenuation",
+        type=float,
+        default=70.0,
+        help="Required DDC stopband attenuation in dB (default: 70).",
+    )
+    ddc.add_argument(
+        "-cs",
+        "--chunk-samples",
+        type=int,
+        default=5_000_000,
+        help="High-rate input samples processed per block (default: 5000000).",
+    )
+    ddc.add_argument(
+        "-pd",
         "--padding",
         type=float,
         default=0.050,
@@ -72,22 +146,75 @@ def add_airband_am_subparser(
     )
 
     audio = parser.add_argument_group("Air Band AM voice audio")
-    audio.add_argument("--audio-rate", type=float, default=48e3)
-    audio.add_argument("--audio-low", type=float, default=300.0)
-    audio.add_argument("--audio-high", type=float, default=4e3)
     audio.add_argument(
+        "-ar",
+        "--audio-rate",
+        type=float,
+        default=48e3,
+        help="Output WAV sample rate in samples/s (default: 48e3).",
+    )
+    audio.add_argument(
+        "-al",
+        "--audio-low",
+        type=float,
+        default=300.0,
+        help="Voice-audio high-pass cutoff in Hz (default: 300).",
+    )
+    audio.add_argument(
+        "-ah",
+        "--audio-high",
+        type=float,
+        default=4e3,
+        help="Voice-audio low-pass cutoff in Hz (default: 4e3).",
+    )
+    audio.add_argument(
+        "-nn",
         "--no-normalize",
         action="store_true",
         help="Write unnormalized float32 WAV instead of listening-normalized int16.",
     )
-    audio.add_argument("--normalization-percentile", type=float, default=99.5)
-    audio.add_argument("--normalization-target", type=float, default=0.8)
+    audio.add_argument(
+        "-np",
+        "--normalization-percentile",
+        type=float,
+        default=99.5,
+        help="Absolute-amplitude percentile used for normalization (default: 99.5).",
+    )
+    audio.add_argument(
+        "-nt",
+        "--normalization-target",
+        type=float,
+        default=0.8,
+        help="Full-scale target for the selected percentile (default: 0.8).",
+    )
 
     output = parser.add_argument_group("output")
-    output.add_argument("--output-dir")
-    output.add_argument("--output-root", default="results")
-    output.add_argument("--overwrite", action="store_true")
-    output.add_argument("--label", default="airband_am")
+    output.add_argument(
+        "-o",
+        "--output-dir",
+        help=(
+            "Explicit output-directory base; omit to derive a directory name "
+            "from the input, frequency, and time window."
+        ),
+    )
+    output.add_argument(
+        "-or",
+        "--output-root",
+        default="results",
+        help="Root for automatically named output directories (default: results).",
+    )
+    output.add_argument(
+        "-ow",
+        "--overwrite",
+        action="store_true",
+        help="Replace fixed files in the base directory instead of adding run02.",
+    )
+    output.add_argument(
+        "-l",
+        "--label",
+        default="airband_am",
+        help="Human-readable label stored in plots and the JSON summary.",
+    )
     parser.set_defaults(command_handler=_run_airband_am, command_parser=parser)
     return parser
 
