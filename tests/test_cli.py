@@ -14,11 +14,17 @@ import unittest
 from lfdemod import __version__
 from lfdemod.cli import build_parser, main
 from lfdemod.fm import FMPSDConfig
+from lfdemod.starlink_vhf import StarlinkVHFDDCConfig
 
 
 class LFdemodCLITest(unittest.TestCase):
     def test_public_fm_api_is_available(self) -> None:
         self.assertIsNotNone(FMPSDConfig)
+
+    def test_public_starlink_vhf_api_is_available(self) -> None:
+        """Confirm the new decoder imports without loading optional lora-phy."""
+
+        self.assertIsNotNone(StarlinkVHFDDCConfig)
 
     def test_no_subcommand_prints_top_level_help(self) -> None:
         output = io.StringIO()
@@ -52,6 +58,20 @@ class LFdemodCLITest(unittest.TestCase):
         self.assertIn("--rf-frequency", help_text)
         self.assertIn("--duration", help_text)
         self.assertIn("--channel-passband", help_text)
+        self.assertIn("--output-root", help_text)
+
+    def test_starlink_vhf_help_lists_key_options(self) -> None:
+        """Confirm Starlink VHF help describes RF, LoRa, and output options."""
+
+        output = io.StringIO()
+        with self.assertRaises(SystemExit) as raised, redirect_stdout(output):
+            main(["starlink-vhf", "--help"])
+        self.assertEqual(raised.exception.code, 0)
+        help_text = output.getvalue()
+        self.assertIn("usage: lfdemod starlink-vhf", help_text)
+        self.assertIn("--rf-frequency", help_text)
+        self.assertIn("--bandwidth", help_text)
+        self.assertIn("--sync-word", help_text)
         self.assertIn("--output-root", help_text)
 
     def test_version_uses_lowercase_command_name(self) -> None:
@@ -92,6 +112,19 @@ class LFdemodCLITest(unittest.TestCase):
                 "4",
             ]
         )
+        starlink = parser.parse_args(
+            [
+                "starlink-vhf",
+                "-i",
+                "starlink.dat",
+                "-f",
+                "137.055e6",
+                "-s",
+                "5.15",
+                "-d",
+                "1.4",
+            ]
+        )
         self.assertEqual(fm.input, "fm.dat")
         self.assertEqual(fm.rf_frequency, 98.3e6)
         self.assertEqual(fm.start, 1.0)
@@ -100,6 +133,10 @@ class LFdemodCLITest(unittest.TestCase):
         self.assertEqual(airband.rf_frequency, 118.65e6)
         self.assertEqual(airband.start, 3.0)
         self.assertEqual(airband.duration, 4.0)
+        self.assertEqual(starlink.input, "starlink.dat")
+        self.assertEqual(starlink.rf_frequency, 137.055e6)
+        self.assertEqual(starlink.start, 5.15)
+        self.assertEqual(starlink.duration, 1.4)
 
     def test_every_long_option_has_short_alias_and_explanation(self) -> None:
         """Confirm every public long option has a short spelling and help text."""

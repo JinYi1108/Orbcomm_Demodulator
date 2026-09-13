@@ -17,6 +17,7 @@ from typing import Sequence
 
 from orbdemod.airband_am.cli import add_airband_am_subparser
 from orbdemod.fm.cli import add_fm_subparser
+from orbdemod.starlink_vhf.cli import add_starlink_vhf_subparser
 
 from . import __version__
 
@@ -45,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_fm_subparser(subparsers)
     add_airband_am_subparser(subparsers)
+    add_starlink_vhf_subparser(subparsers)
     return parser
 
 

@@ -23,6 +23,9 @@ dependencies = [
     "scipy"
 ]
 
+[project.optional-dependencies]
+starlink-vhf = ["lora-phy==0.3.0"]
+
 [project.scripts]
 lfdemod = "lfdemod.cli:main"
 

@@ -51,6 +51,8 @@ After the editable install, inspect the current command interface with:
 ```bash
 lfdemod --help
 lfdemod fm --help
+lfdemod airband-am --help
+lfdemod starlink-vhf --help
 ```
 ---
 ## Examples and Test Data
@@ -224,3 +226,41 @@ and `run_config.json`.
 
 `python examples/analyze_fm_psd.py ...` remains as a thin compatibility
 wrapper and accepts the same FM options. New usage should prefer `lfdemod fm`.
+
+---
+
+## Starlink-profile VHF LoRa decoding
+
+For the complete parameter and output description, see
+[Starlink VHF 使用说明](docs/StarlinkVHF使用说明.md).
+
+Install the optional LoRa physical-layer dependency when this decoder is
+needed; FM, ORBCOMM, and airband AM do not require it:
+
+```bash
+python -m pip install -e '.[starlink-vhf]'
+```
+
+The reusable command accepts any explicit raw-file window and RF center.  Its
+defaults implement the observed Starlink VHF profile: approximately 41.667 kHz
+bandwidth, SF8, 15 preamble symbols, sync byte 0x12, an explicit PHY header,
+an 81-byte payload, CR 4/5, CRC, and forced LDRO. The PHY/output layer also
+accepts reported 73, 87, 104, and 227-byte profiles without inventing field
+interpretations; only the 81-byte profile is currently field-validated by
+this project.
+
+```bash
+lfdemod starlink-vhf \
+  --input /path/to/raw.dat \
+  --rf-frequency 137.055e6 \
+  --start 5.15 \
+  --duration 1.4 \
+  --output-dir /path/to/results/event_01 \
+  --save-iq
+```
+
+The output directory contains ``summary.json``, ``frames.csv``,
+``diagnostic.png``, and one payload/frame binary pair for each decoded packet.
+``channel_iq.c64`` is added only with ``--save-iq``.  The decoder reports a
+conservative Starlink-profile match; it does not scan a dataset, infer a
+100-second cadence, propagate TLEs, or map a frame to a named spacecraft.
